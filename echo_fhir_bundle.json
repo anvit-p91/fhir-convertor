@@ -1,0 +1,899 @@
+{
+  "resourceType": "Bundle",
+  "id": "eafd4696-010b-4b01-a379-b7a261ec891d",
+  "meta": {
+    "lastUpdated": "2026-02-24T08:07:54Z",
+    "profile": [
+      "https://ig.hcxprotocol.io/v0.8/StructureDefinition-HCXClaimBundle.html"
+    ]
+  },
+  "identifier": {
+    "system": "https://nhcx.abdm.gov.in/claim",
+    "value": "dcd1740d-0189-4aa8-91c0-a82a6922e56e"
+  },
+  "type": "document",
+  "timestamp": "2026-02-24T08:07:54Z",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:c476cf3d-12f6-46a4-bea9-7568ae5ad75d",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "c476cf3d-12f6-46a4-bea9-7568ae5ad75d",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient"
+          ]
+        },
+        "gender": "unknown",
+        "identifier": []
+      },
+      "request": {
+        "method": "POST",
+        "url": "Patient"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:8cc38794-9c0b-4907-8459-ea167659f786",
+      "resource": {
+        "resourceType": "Organization",
+        "id": "8cc38794-9c0b-4907-8459-ea167659f786",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization"
+          ]
+        },
+        "active": true,
+        "name": "All is Well Multi Speciality Hospital",
+        "address": [
+          {
+            "text": "Near Macro Vision Academy, Mohammadpura, BURHANPUR 450331 (M.P.)",
+            "use": "work"
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+91 76977 44444"
+          },
+          {
+            "system": "phone",
+            "value": "+91 70890 55888"
+          },
+          {
+            "system": "email",
+            "value": "frontdesk@alliswellhospital.com"
+          },
+          {
+            "system": "url",
+            "value": "https://www.alliswellhospital.com"
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Organization"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f9541ef0-1c05-48e2-bc65-803f4a7c39a6",
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "f9541ef0-1c05-48e2-bc65-803f4a7c39a6",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner"
+          ]
+        },
+        "active": true,
+        "name": [
+          {
+            "text": "Cardiologist"
+          }
+        ],
+        "qualification": [
+          {
+            "code": {
+              "text": "MBBS, MD, DM Cardiology"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Practitioner"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:01b454ff-64b6-4726-9cfc-6488e3528656",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "01b454ff-64b6-4726-9cfc-6488e3528656",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18029-5",
+              "display": "Left Atrium (LA)"
+            }
+          ],
+          "text": "Left Atrium (LA)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 28.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1667f6f8-1d98-4484-acea-af67cbc8a8b8",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "1667f6f8-1d98-4484-acea-af67cbc8a8b8",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18026-1",
+              "display": "Aortic Root (AO)"
+            }
+          ],
+          "text": "Aortic Root (AO)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 19.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:9040c246-5d2f-4500-bb66-88f030cb5bdc",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "9040c246-5d2f-4500-bb66-88f030cb5bdc",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18148-3",
+              "display": "IVS Diastole (IVS-d)"
+            }
+          ],
+          "text": "IVS Diastole (IVS-d)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 10.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:bf389ef6-60c1-4d36-a7f9-6d7dc951f208",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "bf389ef6-60c1-4d36-a7f9-6d7dc951f208",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18151-7",
+              "display": "LVPW Diastole (LVPW-d)"
+            }
+          ],
+          "text": "LVPW Diastole (LVPW-d)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 11.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7716602b-44b5-4f62-b5bb-05fe3f16de25",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "7716602b-44b5-4f62-b5bb-05fe3f16de25",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18026-9",
+              "display": "LV Internal Diastolic Diameter (LVID-d)"
+            }
+          ],
+          "text": "LV Internal Diastolic Diameter (LVID-d)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 41.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:021ef557-43ef-487e-982e-ac821d4f5ba6",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "021ef557-43ef-487e-982e-ac821d4f5ba6",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18026-7",
+              "display": "LV Internal Systolic Diameter (LVID-s)"
+            }
+          ],
+          "text": "LV Internal Systolic Diameter (LVID-s)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 30.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:1d703148-35e3-4ff9-8325-aa6c73955b7f",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "1d703148-35e3-4ff9-8325-aa6c73955b7f",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "18050-1",
+              "display": "Right Atrium 4C (RA 4C)"
+            }
+          ],
+          "text": "Right Atrium 4C (RA 4C)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 29.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e692af1d-6c8f-4571-996d-3261472a3edf",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "e692af1d-6c8f-4571-996d-3261472a3edf",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "59080-8",
+              "display": "RVID Diastole (RVID-d)"
+            }
+          ],
+          "text": "RVID Diastole (RVID-d)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueQuantity": {
+          "value": 28.0,
+          "unit": "mm",
+          "system": "http://unitsofmeasure.org",
+          "code": "mm"
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "N",
+                "display": "Normal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:be17db00-1938-43a5-a67c-3e7e32a5cc77",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "be17db00-1938-43a5-a67c-3e7e32a5cc77",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging",
+                "display": "Imaging"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Left Ventricular Ejection Fraction (LVEF)"
+            }
+          ],
+          "text": "Left Ventricular Ejection Fraction (LVEF)"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "performer": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "valueRange": {
+          "low": {
+            "value": 40.0,
+            "unit": "%",
+            "system": "http://unitsofmeasure.org",
+            "code": "%"
+          },
+          "high": {
+            "value": 45.0,
+            "unit": "%",
+            "system": "http://unitsofmeasure.org",
+            "code": "%"
+          }
+        },
+        "interpretation": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                "code": "A",
+                "display": "Abnormal"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Observation"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cc091bb8-23cc-492f-bdc4-d543a5b90ba9",
+      "resource": {
+        "resourceType": "DiagnosticReport",
+        "id": "cc091bb8-23cc-492f-bdc4-d543a5b90ba9",
+        "meta": {
+          "profile": [
+            "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReport"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/v2-0074",
+                "code": "CUS",
+                "display": "Cardiac Ultrasound"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "34552-0",
+              "display": "2D cardiac echo panel"
+            }
+          ],
+          "text": "2D Echocardiography"
+        },
+        "subject": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "effectiveDateTime": "2025-03-31",
+        "issued": "2026-02-24T08:07:54Z",
+        "performer": [
+          {
+            "reference": "Organization/8cc38794-9c0b-4907-8459-ea167659f786"
+          }
+        ],
+        "resultsInterpreter": [
+          {
+            "reference": "Practitioner/f9541ef0-1c05-48e2-bc65-803f4a7c39a6"
+          }
+        ],
+        "result": [
+          {
+            "reference": "Observation/01b454ff-64b6-4726-9cfc-6488e3528656"
+          },
+          {
+            "reference": "Observation/1667f6f8-1d98-4484-acea-af67cbc8a8b8"
+          },
+          {
+            "reference": "Observation/9040c246-5d2f-4500-bb66-88f030cb5bdc"
+          },
+          {
+            "reference": "Observation/bf389ef6-60c1-4d36-a7f9-6d7dc951f208"
+          },
+          {
+            "reference": "Observation/7716602b-44b5-4f62-b5bb-05fe3f16de25"
+          },
+          {
+            "reference": "Observation/021ef557-43ef-487e-982e-ac821d4f5ba6"
+          },
+          {
+            "reference": "Observation/1d703148-35e3-4ff9-8325-aa6c73955b7f"
+          },
+          {
+            "reference": "Observation/e692af1d-6c8f-4571-996d-3261472a3edf"
+          },
+          {
+            "reference": "Observation/be17db00-1938-43a5-a67c-3e7e32a5cc77"
+          }
+        ],
+        "conclusion": "Degenerative affection of MV & AV. Ischemic Heart Disease. RWMA as above. Evidence of LV Diastolic Dysfunction. Trivial MR / Trivial TR. No PAH. Moderately Compromised LV Systolic Function (LVEF 40-45%).",
+        "conclusionCode": [
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "53741008",
+                "display": "Ischemic heart disease"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://snomed.info/sct",
+                "code": "84114007",
+                "display": "Heart failure"
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "DiagnosticReport"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:dcd1740d-0189-4aa8-91c0-a82a6922e56e",
+      "resource": {
+        "resourceType": "Claim",
+        "id": "dcd1740d-0189-4aa8-91c0-a82a6922e56e",
+        "meta": {
+          "profile": [
+            "https://ig.hcxprotocol.io/v0.8/StructureDefinition-Claim.html"
+          ]
+        },
+        "status": "active",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/claim-type",
+              "code": "institutional",
+              "display": "Institutional"
+            }
+          ]
+        },
+        "use": "claim",
+        "patient": {
+          "reference": "Patient/c476cf3d-12f6-46a4-bea9-7568ae5ad75d"
+        },
+        "created": "2026-02-24T08:07:54Z",
+        "insurer": {
+          "display": "Health Insurance Provider"
+        },
+        "provider": {
+          "reference": "Organization/8cc38794-9c0b-4907-8459-ea167659f786"
+        },
+        "priority": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/processpriority",
+              "code": "normal"
+            }
+          ]
+        },
+        "supportingInfo": [
+          {
+            "sequence": 1,
+            "category": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/claiminformationcategory",
+                  "code": "info"
+                }
+              ]
+            },
+            "valueReference": {
+              "reference": "DiagnosticReport/cc091bb8-23cc-492f-bdc4-d543a5b90ba9"
+            }
+          }
+        ],
+        "diagnosis": [
+          {
+            "sequence": 1,
+            "diagnosisCodeableConcept": {
+              "coding": [
+                {
+                  "system": "http://hl7.org/fhir/sid/icd-10",
+                  "code": "I25.9",
+                  "display": "Chronic ischemic heart disease, unspecified"
+                }
+              ],
+              "text": "Ischemic Heart Disease"
+            },
+            "type": [
+              {
+                "coding": [
+                  {
+                    "system": "http://terminology.hl7.org/CodeSystem/ex-diagnosistype",
+                    "code": "principal"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "34552-0",
+                  "display": "2D cardiac echo panel"
+                }
+              ],
+              "text": "2D Echocardiography"
+            },
+            "servicedDate": "2025-03-31",
+            "quantity": {
+              "value": 1
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "POST",
+        "url": "Claim"
+      }
+    }
+  ]
+}

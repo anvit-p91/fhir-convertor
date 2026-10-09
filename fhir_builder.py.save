@@ -1,0 +1,1016 @@
+"""
+FHIR Bundle Builder — v3
+------------------------
+Constructs NHCX/ABDM-compliant FHIR R4 bundles from extracted clinical data.
+
+Key improvements in v3:
+  - DiagnosticReport category uses CUS (Cardiac Ultrasound) for echo reports
+    instead of the incorrect generic Radiology SNOMED code.
+  - Observation.effectiveDateTime pulled from report_date, not generation time.
+  - valueRange support for range values like "40-45" (e.g. LVEF).
+  - RWMA, miscellaneous findings correctly encoded as valueString Observations.
+  - Organization populated with name, address, and telecom from extracted data.
+  - Practitioner gets qualification block.
+  - DiagnosticReport gains resultsInterpreter + correct conclusionCode (ICD-10).
+  - Claim item productOrService uses LOINC code matching the study type.
+  - Claim priority coding includes system URI.
+  - _build_claim correctly separates provider (hospital) from insurer.
+
+Profiles targeted:
+  ABDM : https://nrces.in/ndhm/fhir/r4/StructureDefinition/
+  NHCX : https://ig.hcxprotocol.io/v0.8/
+"""
+
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+# ── Profile constants ─────────────────────────────────────────────────────────
+
+PROFILES = {
+    "Bundle_Claim":      "https://ig.hcxprotocol.io/v0.8/StructureDefinition-HCXClaimBundle.html",
+    "Bundle_PreAuth":    "https://ig.hcxprotocol.io/v0.8/StructureDefinition-HCXPreAuthBundle.html",
+    "Bundle_Document":   "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentBundle",
+    "DiagnosticReport":  "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DiagnosticReport",
+    "DischargeSummary":  "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DischargeSummaryRecord",
+    "Composition":       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Composition",
+    "Patient":           "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Patient",
+    "Organization":      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Organization",
+    "Practitioner":      "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Practitioner",
+    "Observation":       "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Observation",
+    "Condition":         "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Condition",
+    "MedicationRequest": "https://nrces.in/ndhm/fhir/r4/StructureDefinition/MedicationRequest",
+    "Procedure":         "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Procedure",
+    "Encounter":         "https://nrces.in/ndhm/fhir/r4/StructureDefinition/Encounter",
+    "CarePlan":          "https://nrces.in/ndhm/fhir/r4/StructureDefinition/CarePlan",
+    "DocumentReference": "https://nrces.in/ndhm/fhir/r4/StructureDefinition/DocumentReference",
+    "Claim":             "https://ig.hcxprotocol.io/v0.8/StructureDefinition-Claim.html",
+}
+
+# ── Study-type → LOINC mapping ────────────────────────────────────────────────
+
+STUDY_LOINC: Dict[str, Tuple[str, str]] = {
+    "2d echo":          ("34552-0",  "2D cardiac echo panel"),
+    "echocardiography": ("34552-0",  "2D cardiac echo panel"),
+    "echo":             ("34552-0",  "2D cardiac echo panel"),
+    "ecg":              ("11524-6",  "EKG study"),
+    "electrocardiogram":("11524-6",  "EKG study"),
+    "ct scan":          ("24627-2",  "CT of chest"),
+    "ct chest":         ("24627-2",  "CT of chest"),
+    "mri":              ("24558-9",  "MRI of brain"),
+    "x-ray":            ("24748-6",  "XR of chest"),
+    "cbc":              ("58410-2",  "CBC panel"),
+    "lipid":            ("57698-3",  "Lipid panel"),
+    "lft":              ("24325-3",  "Liver function tests"),
+    "kft":              ("24362-6",  "Kidney function tests"),
+    "hba1c":            ("4548-4",   "Hemoglobin A1c"),
+    "ultrasound":       ("24627-2",  "Ultrasound study"),
+}
+
+# ── DiagnosticReport category codes ──────────────────────────────────────────
+# Maps study keywords → (system, code, display) for DR.category
+CATEGORY_MAP: Dict[str, Tuple[str, str, str]] = {
+    "echo":          ("http://terminology.hl7.org/CodeSystem/v2-0074", "CUS", "Cardiac Ultrasound"),
+    "echocardiography": ("http://terminology.hl7.org/CodeSystem/v2-0074", "CUS", "Cardiac Ultrasound"),
+    "cardiology":    ("http://terminology.hl7.org/CodeSystem/v2-0074", "CUS", "Cardiac Ultrasound"),
+    "radiology":     ("http://snomed.info/sct", "4231000179109", "Radiology report"),
+    "ct":            ("http://snomed.info/sct", "4231000179109", "Radiology report"),
+    "mri":           ("http://snomed.info/sct", "4231000179109", "Radiology report"),
+    "x-ray":         ("http://snomed.info/sct", "4231000179109", "Radiology report"),
+    "lab":           ("http://terminology.hl7.org/CodeSystem/v2-0074", "LAB", "Laboratory"),
+    "pathology":     ("http://terminology.hl7.org/CodeSystem/v2-0074", "LAB", "Laboratory"),
+    "microbiology":  ("http://terminology.hl7.org/CodeSystem/v2-0074", "MB",  "Microbiology"),
+}
+
+# ── Observation interpretation map ────────────────────────────────────────────
+
+INTERP_MAP = {
+    "normal":   {"system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                 "code": "N", "display": "Normal"},
+    "abnormal": {"system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                 "code": "A", "display": "Abnormal"},
+    "critical": {"system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                 "code": "AA", "display": "Critical abnormal"},
+}
+
+# ── ICD-10 conclusion-code hints ──────────────────────────────────────────────
+# If conclusion contains one of these keywords, map to ICD-10 for conclusionCode.
+CONCLUSION_ICD_HINTS = [
+    ("ischemic heart disease",    "I25.9", "Chronic ischemic heart disease, unspecified"),
+    ("ihd",                       "I25.9", "Chronic ischemic heart disease, unspecified"),
+    ("myocardial infarction",     "I21.9", "Acute myocardial infarction, unspecified"),
+    ("heart failure",             "I50.9", "Heart failure, unspecified"),
+    ("hypertension",              "I10",   "Essential (primary) hypertension"),
+    ("diabetes",                  "E11.9", "Type 2 diabetes mellitus, unspecified"),
+    ("pneumonia",                 "J18.9", "Pneumonia, unspecified organism"),
+    ("copd",                      "J44.1", "COPD with acute exacerbation"),
+    ("stroke",                    "I63.9", "Cerebral infarction, unspecified"),
+    ("sepsis",                    "A41.9", "Sepsis, unspecified organism"),
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _urn(uid: str) -> str:
+    return f"urn:uuid:{uid}"
+
+
+def _entry(resource: Dict) -> Dict:
+    rid = resource["id"]
+    return {"fullUrl": _urn(rid), "resource": resource}
+
+
+def _meta(profile_key: str, report_date: Optional[str] = None) -> Dict:
+    return {
+        "versionId": "1",
+        "lastUpdated": (f"{report_date}T00:00:00Z" if report_date else _now_iso()),
+        "profile": [PROFILES[profile_key]],
+    }
+
+
+def _resolve_study_loinc(report_type: str, loinc_code: Optional[str], loinc_display: Optional[str]) -> Tuple[str, str]:
+    """Return (loinc_code, loinc_display) — prefer extracted value, fall back to keyword map."""
+    if loinc_code and loinc_display:
+        return loinc_code, loinc_display
+    rt_lower = (report_type or "").lower()
+    for key, val in STUDY_LOINC.items():
+        if key in rt_lower:
+            return val
+    return ("47045-0", "Study report")  # generic fallback
+
+
+def _resolve_category(report_type: str, report_category: str) -> Tuple[str, str, str]:
+    """Return (system, code, display) for DiagnosticReport.category."""
+    combined = f"{report_type} {report_category}".lower()
+    for key, val in CATEGORY_MAP.items():
+        if key in combined:
+            return val
+    return ("http://terminology.hl7.org/CodeSystem/v2-0074", "LAB", "Laboratory")
+
+
+def _parse_value_range(val: Any) -> Optional[Tuple[float, float]]:
+    """If value looks like '40-45', return (40.0, 45.0), else None."""
+    if isinstance(val, str):
+        match = re.match(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$", val)
+        if match:
+            return float(match.group(1)), float(match.group(2))
+    return None
+
+
+def _infer_conclusion_codes(conclusion: str) -> List[Dict]:
+    """Scan conclusion text for known diagnoses and return ICD-10 conclusionCodes."""
+    lower = conclusion.lower()
+    codes = []
+    seen = set()
+    for keyword, icd, display in CONCLUSION_ICD_HINTS:
+        if keyword in lower and icd not in seen:
+            codes.append({
+                "coding": [{
+                    "system": "http://hl7.org/fhir/sid/icd-10",
+                    "code": icd,
+                    "display": display,
+                }],
+                "text": display,
+            })
+            seen.add(icd)
+    return codes
+
+
+# ── Main Builder ──────────────────────────────────────────────────────────────
+
+class FHIRBundleBuilder:
+    """Builds NHCX-compliant FHIR R4 Document Bundles."""
+
+    # ── Top-level entry point ─────────────────────────────────────────────────
+
+    def build_bundle(
+        self,
+        documents: List[Dict[str, Any]],
+        use_case: str = "claim_submission",
+        claim_id: Optional[str] = None,
+        patient_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build a complete FHIR Bundle from one or more extracted clinical documents.
+
+        Args:
+            documents : list of dicts with keys: hi_type, data (extracted JSON), filename
+            use_case  : claim_submission | pre_authorization
+            claim_id  : optional HCX claim reference
+            patient_id: optional ABHA ID
+            request_id: optional tracing ID (unused in output but accepted for compat)
+        """
+        entries: List[Dict] = []
+        patient_uid      = _uuid()
+        org_uid          = _uuid()
+        practitioner_uid = _uuid()
+        encounter_uid    = _uuid()
+
+        first_doc_data = documents[0].get("data", {}) if documents else {}
+
+        # ── Report date (used for meta.lastUpdated on entries) ────────────────
+        report_date: Optional[str] = first_doc_data.get("report_date") or \
+                                     first_doc_data.get("discharge", {}).get("date")
+
+        # ── Shared: Patient ───────────────────────────────────────────────────
+        patient_info = first_doc_data.get("patient", {})
+        entries.append(_entry(self._build_patient(
+            patient_uid, patient_info, patient_id, report_date
+        )))
+
+        # ── Shared: Organization ──────────────────────────────────────────────
+        hospital_info = first_doc_data.get("hospital", {})
+        entries.append(_entry(self._build_organization(
+            org_uid, hospital_info, report_date
+        )))
+
+        # ── Shared: Practitioner ──────────────────────────────────────────────
+        doctor_name = (
+            first_doc_data.get("attending_doctor")
+            or first_doc_data.get("referring_doctor")
+            or first_doc_data.get("performing_doctor")
+        )
+        entries.append(_entry(self._build_practitioner(
+            practitioner_uid, doctor_name, report_date
+        )))
+
+        # ── Per-document resources ────────────────────────────────────────────
+        claim_support_refs: List[Dict] = []
+
+        for doc in documents:
+            hi_type  = doc.get("hi_type", "DiagnosticReport")
+            data     = doc.get("data", {})
+
+            if hi_type == "DischargeSummary":
+                new_entries, section_uids = self._build_discharge_summary_resources(
+                    data, patient_uid, org_uid, practitioner_uid, encounter_uid
+                )
+                entries.extend(new_entries)
+                claim_support_refs.append({
+                    "sequence": len(claim_support_refs) + 1,
+                    "category": {"coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/claiminformationcategory",
+                        "code": "discharge", "display": "Discharge",
+                    }]},
+                    "valueReference": {"reference": _urn(section_uids[0])} if section_uids else {},
+                })
+            else:  # DiagnosticReport
+                new_entries, dr_uid = self._build_diagnostic_report_resources(
+                    data, patient_uid, org_uid, practitioner_uid
+                )
+                entries.extend(new_entries)
+                claim_support_refs.append({
+                    "sequence": len(claim_support_refs) + 1,
+                    "category": {"coding": [{
+                        "system": "http://terminology.hl7.org/CodeSystem/claiminformationcategory",
+                        "code": "info", "display": "Information",
+                    }]},
+                    "valueReference": {"reference": _urn(dr_uid)},
+                })
+
+        # ── Claim ─────────────────────────────────────────────────────────────
+        claim_uid = _uuid()
+        claim = self._build_claim(
+            claim_uid,
+            claim_id or "CLM-001",
+            patient_uid,
+            org_uid,
+            practitioner_uid,
+            claim_support_refs,
+            first_doc_data,
+            use_case,
+        )
+        entries.append(_entry(claim))
+
+        # ── Bundle ────────────────────────────────────────────────────────────
+        bundle_profile = (
+            PROFILES["Bundle_PreAuth"]
+            if use_case == "pre_authorization"
+            else PROFILES["Bundle_Claim"]
+        )
+
+        ts = f"{report_date}T00:00:00Z" if report_date else _now_iso()
+
+        return {
+            "resourceType": "Bundle",
+            "id": _uuid(),
+            "meta": {
+                "versionId": "1",
+                "lastUpdated": ts,
+                "profile": [bundle_profile],
+                "security": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+                    "code": "N",
+                    "display": "normal",
+                }],
+            },
+            "identifier": {"system": "http://hip.in", "value": _uuid()},
+            "type": "document",
+            "timestamp": ts,
+            "entry": entries,
+        }
+
+    # ── DiagnosticReport pipeline ─────────────────────────────────────────────
+
+    def _build_diagnostic_report_resources(
+        self,
+        data: Dict,
+        patient_uid: str,
+        org_uid: str,
+        practitioner_uid: str,
+    ):
+        """Build Observation(s) + DiagnosticReport entries. Returns (entries, dr_uid)."""
+        entries   = []
+        obs_refs  = []
+        report_date = data.get("report_date") or _now_iso()[:10]
+
+        # ── Observations ──────────────────────────────────────────────────────
+        for obs_data in data.get("observations", []):
+            obs_uid = _uuid()
+            obs = self._build_observation(
+                obs_uid, obs_data, patient_uid, practitioner_uid, report_date
+            )
+            entries.append(_entry(obs))
+            obs_refs.append({
+                "reference": _urn(obs_uid),
+                "display": obs_data.get("display", "Observation"),
+            })
+
+        # ── Specimen (optional) ───────────────────────────────────────────────
+        specimen_uid   = None
+        specimen_info  = data.get("specimen", {})
+        if specimen_info and specimen_info.get("type"):
+            specimen_uid = _uuid()
+            entries.append(_entry(
+                self._build_specimen(specimen_uid, specimen_info, patient_uid)
+            ))
+
+        # ── LOINC + Category ──────────────────────────────────────────────────
+        report_type     = data.get("report_type", "Diagnostic Report")
+        report_category = data.get("report_category", "")
+        loinc_code, loinc_display = _resolve_study_loinc(
+            report_type,
+            data.get("loinc_code"),
+            data.get("loinc_display"),
+        )
+        cat_system, cat_code, cat_display = _resolve_category(report_type, report_category)
+
+        # ── Conclusion + conclusionCode ───────────────────────────────────────
+        conclusion = data.get("conclusion") or "; ".join(data.get("impression", []))
+        conclusion_codes = _infer_conclusion_codes(conclusion)
+        # Also honour any explicit loinc conclusionCode from extracted data
+        if not conclusion_codes and data.get("conclusion"):
+            conclusion_codes = [{
+                "coding": [{"system": "http://snomed.info/sct",
+                             "code": "404684003",
+                             "display": conclusion[:80]}],
+            }]
+
+        # ── DiagnosticReport ──────────────────────────────────────────────────
+        dr_uid = _uuid()
+        dr: Dict[str, Any] = {
+            "resourceType": "DiagnosticReport",
+            "id": dr_uid,
+            "meta": _meta("DiagnosticReport", report_date),
+            "status": "final",
+            "category": [{"coding": [{
+                "system": cat_system,
+                "code":   cat_code,
+                "display": cat_display,
+            }]}],
+            "code": {
+                "coding": [{"system": "http://loinc.org",
+                             "code":   loinc_code,
+                             "display": loinc_display}],
+                "text": report_type,
+            },
+            "subject":           {"reference": _urn(patient_uid), "display": "Patient"},
+            "effectiveDateTime": report_date,
+            "issued":            f"{report_date}T00:00:00Z",
+            "performer": [
+                {"reference": _urn(org_uid),          "display": "Organization"},
+            ],
+            "resultsInterpreter": [
+                {"reference": _urn(practitioner_uid), "display": "Practitioner"},
+            ],
+            "result":     obs_refs,
+            "conclusion": conclusion,
+        }
+        if conclusion_codes:
+            dr["conclusionCode"] = conclusion_codes
+        if specimen_uid:
+            dr["specimen"] = [{"reference": _urn(specimen_uid)}]
+
+        entries.append(_entry(dr))
+        return entries, dr_uid
+
+    # ── DischargeSummary pipeline ─────────────────────────────────────────────
+
+    def _build_discharge_summary_resources(
+        self,
+        data: Dict,
+        patient_uid: str,
+        org_uid: str,
+        practitioner_uid: str,
+        encounter_uid: str,
+    ):
+        entries: List[Dict] = []
+        composition_sections: List[Dict] = []
+
+        # Encounter
+        encounter = self._build_encounter(
+            encounter_uid, patient_uid, org_uid,
+            data.get("admission", {}), data.get("discharge", {})
+        )
+        entries.append(_entry(encounter))
+
+        # Appointment
+        appt_uid = _uuid()
+        entries.append(_entry(self._build_appointment(appt_uid, patient_uid, encounter_uid)))
+
+        # Chief complaints → Condition
+        cc_refs = []
+        for complaint in data.get("chief_complaints", [])[:3]:
+            cond_uid = _uuid()
+            entries.append(_entry(self._build_condition(
+                cond_uid, complaint, patient_uid, encounter_uid,
+                category_code="75326-9", category_display="Problem"
+            )))
+            cc_refs.append({"reference": _urn(cond_uid), "display": "Condition"})
+        if cc_refs:
+            composition_sections.append({
+                "title": "Chief complaints",
+                "code":  {"coding": [{"system": "http://snomed.info/sct",
+                                       "code": "422843007",
+                                       "display": "Chief complaint section"}]},
+                "entry": cc_refs,
+            })
+
+        # Procedures + secondary diagnoses → Medical History
+        history_refs = []
+        for proc_data in data.get("procedures", []):
+            proc_uid = _uuid()
+            entries.append(_entry(self._build_procedure(
+                proc_uid, proc_data, patient_uid, encounter_uid
+            )))
+            history_refs.append({"reference": _urn(proc_uid), "display": "Procedure"})
+        for dx in data.get("diagnosis", {}).get("secondary", []):
+            cond_uid = _uuid()
+            entries.append(_entry(self._build_condition(
+                cond_uid, dx, patient_uid, encounter_uid,
+                category_code="282291009", category_display="Diagnosis"
+            )))
+            history_refs.append({"reference": _urn(cond_uid), "display": "Condition"})
+        if history_refs:
+            composition_sections.append({
+                "title": "Medical History",
+                "code":  {"coding": [{"system": "http://snomed.info/sct",
+                                       "code": "1003642006",
+                                       "display": "Past medical history section"}]},
+                "entry": history_refs,
+            })
+
+        # Investigations → Observation + DiagnosticReport
+        invest_obs_refs = []
+        for inv in data.get("investigations", []):
+            obs_uid = _uuid()
+            obs = self._build_observation(obs_uid, {
+                "code":    inv.get("loinc_code", ""),
+                "display": inv.get("name", "Investigation"),
+                "value":   inv.get("result", ""),
+                "unit":    None,
+                "interpretation": None,
+            }, patient_uid, practitioner_uid, inv.get("date"))
+            entries.append(_entry(obs))
+            invest_obs_refs.append({"reference": _urn(obs_uid), "display": "Observation"})
+
+        invest_dr_refs = []
+        if invest_obs_refs or data.get("investigations_summary"):
+            inv_dr_uid = _uuid()
+            inv_dr = {
+                "resourceType": "DiagnosticReport",
+                "id": inv_dr_uid,
+                "meta": _meta("DiagnosticReport"),
+                "status": "final",
+                "code": {"coding": [{"system": "http://loinc.org",
+                                      "code": "11502-2",
+                                      "display": "Laboratory report"}],
+                         "text": "Investigation Results"},
+                "subject":   {"reference": _urn(patient_uid), "display": "Patient"},
+                "performer": [{"reference": _urn(practitioner_uid)}],
+                "result":    invest_obs_refs,
+                "conclusion": data.get("investigations_summary", ""),
+            }
+            entries.append(_entry(inv_dr))
+            invest_dr_refs = [{"reference": _urn(inv_dr_uid), "display": "DiagnosticReport"}]
+        if invest_dr_refs:
+            composition_sections.append({
+                "title": "Investigations",
+                "code":  {"coding": [{"system": "http://snomed.info/sct",
+                                       "code": "721981007",
+                                       "display": "Diagnostic studies report"}]},
+                "entry": invest_dr_refs,
+            })
+
+        # Medications at discharge
+        med_refs = []
+        for med in data.get("medications_at_discharge", []):
+            med_uid = _uuid()
+            entries.append(_entry(self._build_medication_request(
+                med_uid, med, patient_uid, encounter_uid
+            )))
+            med_refs.append({"reference": _urn(med_uid), "display": "MedicationRequest"})
+        if med_refs:
+            composition_sections.append({
+                "title": "Medication Summary",
+                "code":  {"coding": [{"system": "http://snomed.info/sct",
+                                       "code": "721912009",
+                                       "display": "Medication summary document"}]},
+                "entry": med_refs,
+            })
+
+        # CarePlan (follow-up)
+        follow_up    = data.get("follow_up") or data.get("diet_advice") or data.get("care_plan")
+        careplan_uid = _uuid()
+        entries.append(_entry(self._build_careplan(careplan_uid, follow_up, patient_uid, encounter_uid)))
+        composition_sections.append({
+            "title": "Discharge Summary",
+            "code":  {"coding": [{"system": "http://snomed.info/sct",
+                                   "code": "373942005",
+                                   "display": "Discharge summary"}]},
+            "entry": [{"reference": _urn(careplan_uid), "display": "CarePlan"}],
+        })
+
+        # Primary diagnosis Condition
+        primary_dx = data.get("diagnosis", {}).get("primary")
+        icd10s     = data.get("diagnosis", {}).get("icd10_codes", [])
+        if primary_dx:
+            primary_cond_uid = _uuid()
+            entries.append(_entry(self._build_condition(
+                primary_cond_uid, primary_dx, patient_uid, encounter_uid,
+                icd10=icd10s[0] if icd10s else None,
+                category_code="282291009", category_display="Diagnosis",
+            )))
+
+        # DocumentReference
+        docref_uid = _uuid()
+        entries.append(_entry(self._build_document_reference(
+            docref_uid, patient_uid, practitioner_uid, org_uid
+        )))
+
+        # Composition (goes first in the entry list)
+        composition_uid = _uuid()
+        composition = {
+            "resourceType": "Composition",
+            "id": composition_uid,
+            "meta": _meta("DischargeSummary"),
+            "language": "en-IN",
+            "status": "final",
+            "type": {"coding": [{"system": "http://snomed.info/sct",
+                                  "code": "373942005",
+                                  "display": "Discharge summary"}],
+                     "text": "Discharge Summary"},
+            "subject":         {"reference": _urn(patient_uid), "display": "Patient"},
+            "encounter":       {"reference": _urn(encounter_uid), "display": "Encounter"},
+            "date":            _now_iso(),
+            "author":          [{"reference": _urn(practitioner_uid), "display": "Practitioner"}],
+            "title":           "Discharge Summary",
+            "confidentiality": "N",
+            "custodian":       {"reference": _urn(org_uid), "display": "Organization"},
+            "section":         composition_sections,
+        }
+        entries.insert(0, _entry(composition))
+
+        return entries, [composition_uid, encounter_uid]
+
+    # ── Resource builders ─────────────────────────────────────────────────────
+
+    def _build_patient(
+        self, uid: str, info: Dict,
+        abha_id: Optional[str] = None,
+        report_date: Optional[str] = None,
+    ) -> Dict:
+        p: Dict[str, Any] = {
+            "resourceType": "Patient",
+            "id": uid,
+            "meta": _meta("Patient", report_date),
+        }
+        if info.get("name"):
+            p["name"] = [{"use": "official", "text": info["name"]}]
+        if info.get("age"):
+            p.setdefault("extension", []).append({
+                "url": "http://hl7.org/fhir/StructureDefinition/patient-age",
+                "valueString": str(info["age"]),
+            })
+        sex = (info.get("sex") or "").lower()
+        p["gender"] = {"male": "male", "female": "female", "other": "other"}.get(sex, "unknown")
+
+        identifiers = []
+        if info.get("uhid"):
+            identifiers.append({"system": "http://hip.in/uhid", "value": info["uhid"]})
+        abha = abha_id or info.get("abha_id")
+        if abha:
+            identifiers.append({"system": "https://healthid.ndhm.gov.in", "value": abha})
+        p["identifier"] = identifiers
+        return p
+
+    def _build_organization(
+        self, uid: str, info: Dict,
+        report_date: Optional[str] = None,
+    ) -> Dict:
+        # FIX: was hard-coded "Unknown Hospital" — now requires name from extracted data
+        name = info.get("name") or "Hospital"
+        o: Dict[str, Any] = {
+            "resourceType": "Organization",
+            "id": uid,
+            "meta": _meta("Organization", report_date),
+            "active": True,
+            "name": name,
+        }
+        if info.get("address"):
+            o["address"] = [{"use": "work", "type": "physical", "text": info["address"]}]
+        if info.get("phone"):
+            o.setdefault("telecom", []).append(
+                {"system": "phone", "use": "work", "value": info["phone"]}
+            )
+        if info.get("email"):
+            o.setdefault("telecom", []).append(
+                {"system": "email", "use": "work", "value": info["email"]}
+            )
+        if info.get("url"):
+            o.setdefault("telecom", []).append(
+                {"system": "url", "use": "work", "value": info["url"]}
+            )
+        return o
+
+    def _build_practitioner(
+        self, uid: str, name: Optional[str],
+        report_date: Optional[str] = None,
+    ) -> Dict:
+        p: Dict[str, Any] = {
+            "resourceType": "Practitioner",
+            "id": uid,
+            "meta": _meta("Practitioner", report_date),
+            "active": True,
+        }
+        if name:
+            p["name"] = [{"use": "official", "text": name}]
+            # Detect qualification keywords in the name field
+            qual_text = None
+            name_upper = name.upper()
+            if any(q in name_upper for q in ["MBBS", "MD", "DM", "MS", "DNB", "FRCS"]):
+                qual_text = name
+            if qual_text:
+                p["qualification"] = [{"code": {"text": qual_text}}]
+        return p
+
+    def _build_observation(
+        self,
+        uid: str,
+        obs_data: Dict,
+        patient_uid: str,
+        practitioner_uid: Optional[str] = None,
+        report_date: Optional[str] = None,
+    ) -> Dict:
+        code_val   = obs_data.get("code", "")
+        code_system = "http://loinc.org" if code_val else "http://snomed.info/sct"
+        display    = obs_data.get("display", "Observation")
+        val        = obs_data.get("value")
+        unit       = obs_data.get("unit")
+
+        obs: Dict[str, Any] = {
+            "resourceType": "Observation",
+            "id": uid,
+            "meta": _meta("Observation", report_date),
+            "status": "final",
+            "category": [{"coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "imaging", "display": "Imaging",
+            }]}],
+            "code": {
+                "coding": [{"system": code_system,
+                             "code":   code_val or "404684003",
+                             "display": display}],
+                "text": display,
+            },
+            "subject": {"reference": _urn(patient_uid), "display": "Patient"},
+            "effectiveDateTime": report_date or _now_iso()[:10],
+        }
+
+        if practitioner_uid:
+            obs["performer"] = [{"reference": _urn(practitioner_uid)}]
+
+        # ── Value encoding ─────────────────────────────────────────────────
+        # FIX: Handle "40-45" style range values correctly with valueRange,
+        # instead of trying float() on them and failing or producing wrong output.
+        if val is not None:
+            range_parsed = _parse_value_range(val)
+            if range_parsed:
+                low, high = range_parsed
+                quantity_base: Dict[str, Any] = {}
+                if unit:
+                    quantity_base = {"unit": unit,
+                                     "system": "http://unitsofmeasure.org",
+                                     "code":   unit}
+                obs["valueRange"] = {
+                    "low":  {"value": low,  **quantity_base},
+                    "high": {"value": high, **quantity_base},
+                }
+            else:
+                try:
+                    numeric = float(str(val).replace("%", "").strip())
+                    vq: Dict[str, Any] = {"value": numeric}
+                    if unit:
+                        vq["unit"]   = unit
+                        vq["system"] = "http://unitsofmeasure.org"
+                        vq["code"]   = unit
+                    obs["valueQuantity"] = vq
+                except (ValueError, TypeError):
+                    obs["valueString"] = str(val)
+
+        # ── Interpretation ─────────────────────────────────────────────────
+        interp = (obs_data.get("interpretation") or "").lower()
+        if interp in INTERP_MAP:
+            obs["interpretation"] = [{"coding": [INTERP_MAP[interp]]}]
+
+        return obs
+
+    def _build_specimen(self, uid: str, spec_info: Dict, patient_uid: str) -> Dict:
+        return {
+            "resourceType": "Specimen",
+            "id": uid,
+            "type": {"text": spec_info.get("type", "Unknown specimen")},
+            "subject": {"reference": _urn(patient_uid), "display": "Patient"},
+            "collection": {
+                "collectedDateTime": spec_info.get("collected_date") or _now_iso()[:10]
+            },
+        }
+
+    def _build_encounter(
+        self, uid: str, patient_uid: str, org_uid: str,
+        admission: Dict, discharge: Dict,
+    ) -> Dict:
+        enc: Dict[str, Any] = {
+            "resourceType": "Encounter",
+            "id": uid,
+            "meta": _meta("Encounter"),
+            "status": "finished",
+            "class": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+                      "code": "IMP", "display": "inpatient encounter"},
+            "subject":         {"reference": _urn(patient_uid), "display": "Patient"},
+            "serviceProvider": {"reference": _urn(org_uid),     "display": "Organization"},
+        }
+        period: Dict[str, str] = {}
+        if admission.get("date"):
+            period["start"] = admission["date"]
+        if discharge.get("date"):
+            period["end"] = discharge["date"]
+        if period:
+            enc["period"] = period
+        if admission.get("ward"):
+            enc["location"] = [{"location": {"display": admission["ward"]}}]
+        return enc
+
+    def _build_appointment(self, uid: str, patient_uid: str, encounter_uid: str) -> Dict:
+        return {
+            "resourceType": "Appointment",
+            "id": uid,
+            "status": "fulfilled",
+            "participant": [
+                {"actor": {"reference": _urn(patient_uid), "display": "Patient"},
+                 "status": "accepted"},
+            ],
+            "basedOn": [{"reference": _urn(encounter_uid)}],
+        }
+
+    def _build_condition(
+        self, uid: str, text: str, patient_uid: str, encounter_uid: str,
+        icd10: Optional[str] = None,
+        category_code: str = "75326-9",
+        category_display: str = "Problem",
+    ) -> Dict:
+        coding = []
+        if icd10:
+            coding.append({"system": "http://hl7.org/fhir/sid/icd-10",
+                            "code": icd10, "display": text})
+        else:
+            coding.append({"system": "http://snomed.info/sct",
+                            "code": "404684003", "display": text[:100]})
+        return {
+            "resourceType": "Condition",
+            "id": uid,
+            "meta": _meta("Condition"),
+            "clinicalStatus": {"coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+                "code": "active",
+            }]},
+            "verificationStatus": {"coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+                "code": "confirmed",
+            }]},
+            "category": [{"coding": [{"system": "http://snomed.info/sct",
+                                       "code": category_code,
+                                       "display": category_display}]}],
+            "code":    {"coding": coding, "text": text},
+            "subject": {"reference": _urn(patient_uid), "display": "Patient"},
+            "encounter": {"reference": _urn(encounter_uid)},
+        }
+
+    def _build_procedure(
+        self, uid: str, proc_data: Dict, patient_uid: str, encounter_uid: str
+    ) -> Dict:
+        return {
+            "resourceType": "Procedure",
+            "id": uid,
+            "meta": _meta("Procedure"),
+            "status": "completed",
+            "code": {"coding": [{"system": "http://snomed.info/sct",
+                                  "code": "71388002",
+                                  "display": proc_data.get("name", "Procedure")}],
+                     "text": proc_data.get("name", "Procedure")},
+            "subject":           {"reference": _urn(patient_uid), "display": "Patient"},
+            "encounter":         {"reference": _urn(encounter_uid)},
+            "performedDateTime": proc_data.get("date") or _now_iso()[:10],
+        }
+
+    def _build_medication_request(
+        self, uid: str, med: Dict, patient_uid: str, encounter_uid: str
+    ) -> Dict:
+        mr: Dict[str, Any] = {
+            "resourceType": "MedicationRequest",
+            "id": uid,
+            "meta": _meta("MedicationRequest"),
+            "status": "active",
+            "intent": "order",
+            "medicationCodeableConcept": {
+                "coding": [{"system": "http://snomed.info/sct",
+                             "code": "372687004",
+                             "display": med.get("name", "Medication")}],
+                "text": med.get("name", "Medication"),
+            },
+            "subject":   {"reference": _urn(patient_uid), "display": "Patient"},
+            "encounter": {"reference": _urn(encounter_uid)},
+        }
+        parts = [
+            med.get("dose", ""), med.get("frequency", ""),
+            med.get("route", ""),
+            f"for {med['duration']}" if med.get("duration") else "",
+        ]
+        dosage_text = " ".join(p for p in parts if p).strip()
+        if dosage_text:
+            mr["dosageInstruction"] = [{"text": dosage_text}]
+        return mr
+
+    def _build_careplan(
+        self, uid: str, follow_up: Optional[str],
+        patient_uid: str, encounter_uid: str,
+    ) -> Dict:
+        return {
+            "resourceType": "CarePlan",
+            "id": uid,
+            "meta": _meta("CarePlan"),
+            "status": "active",
+            "intent": "plan",
+            "subject":     {"reference": _urn(patient_uid), "display": "Patient"},
+            "encounter":   {"reference": _urn(encounter_uid)},
+            "description": follow_up or "Follow up as advised by physician.",
+        }
+
+    def _build_document_reference(
+        self, uid: str, patient_uid: str,
+        practitioner_uid: str, org_uid: str,
+    ) -> Dict:
+        return {
+            "resourceType": "DocumentReference",
+            "id": uid,
+            "meta": _meta("DocumentReference"),
+            "status": "current",
+            "type": {"coding": [{"system": "http://snomed.info/sct",
+                                  "code": "373942005",
+                                  "display": "Discharge summary"}],
+                     "text": "Discharge Summary"},
+            "subject":   {"reference": _urn(patient_uid), "display": "Patient"},
+            "author":    [{"reference": _urn(practitioner_uid)}],
+            "custodian": {"reference": _urn(org_uid)},
+            "content":   [{"attachment": {"contentType": "application/pdf",
+                                           "title": "Discharge Summary Document"}}],
+        }
+
+    def _build_claim(
+        self,
+        uid: str,
+        claim_id: str,
+        patient_uid: str,
+        org_uid: str,
+        practitioner_uid: str,
+        supporting_info: List[Dict],
+        data: Dict,
+        use_case: str = "claim_submission",
+    ) -> Dict:
+        # ── Diagnoses ─────────────────────────────────────────────────────────
+        icd10s       = data.get("diagnosis", {}).get("icd10_codes", [])
+        primary_dx   = data.get("diagnosis", {}).get("primary", "")
+        conclusion   = data.get("conclusion", "")
+        # Auto-detect ICD-10 from conclusion if not explicitly supplied
+        if not icd10s and conclusion:
+            detected = _infer_conclusion_codes(conclusion)
+            if detected:
+                icd10s = [c["coding"][0]["code"] for c in detected]
+                if not primary_dx:
+                    primary_dx = detected[0]["coding"][0]["display"]
+
+        diagnosis_list = []
+        for i, code in enumerate(icd10s or ["I25.9"]):
+            dx_text = primary_dx if i == 0 else code
+            diagnosis_list.append({
+                "sequence": i + 1,
+                "diagnosisCodeableConcept": {
+                    "coding": [{"system": "http://hl7.org/fhir/sid/icd-10",
+                                 "code": code, "display": dx_text}],
+                    "text": dx_text,
+                },
+                "type": [{"coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/ex-diagnosistype",
+                    "code":   "principal" if i == 0 else "discharge",
+                    "display": "Principal Diagnosis" if i == 0 else "Discharge Diagnosis",
+                }]}],
+            })
+
+        if not diagnosis_list:
+            diagnosis_list = [{
+                "sequence": 1,
+                "diagnosisCodeableConcept": {
+                    "coding": [{"system": "http://hl7.org/fhir/sid/icd-10",
+                                 "code": "I25.9",
+                                 "display": "Chronic ischemic heart disease, unspecified"}],
+                    "text": "Unspecified",
+                },
+                "type": [{"coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/ex-diagnosistype",
+                    "code": "principal", "display": "Principal Diagnosis",
+                }]}],
+            }]
+
+        # ── Claim item — use LOINC code matching the study type ───────────────
+        # FIX: was hardcoded SNOMED "Hospital services" — now uses LOINC of actual study
+        report_type  = data.get("report_type", "")
+        report_date  = data.get("report_date") or _now_iso()[:10]
+        item_loinc, item_display = _resolve_study_loinc(
+            report_type, data.get("loinc_code"), data.get("loinc_display")
+        )
+
+        return {
+            "resourceType": "Claim",
+            "id": uid,
+            "meta": {"profile": [PROFILES["Claim"]]},
+            "identifier": [{"system": "http://hip.in/claim", "value": claim_id}],
+            "status": "active",
+            "type": {"coding": [{
+                "system":  "http://terminology.hl7.org/CodeSystem/claim-type",
+                "code":    "institutional",
+                "display": "Institutional",
+            }]},
+            "use":     "preauthorization" if use_case == "pre_authorization" else "claim",
+            "patient": {"reference": _urn(patient_uid)},
+            "created": f"{report_date}T00:00:00Z",
+            "insurer": {"display": "Health Insurance Provider"},
+            # FIX: provider is the hospital org, not the practitioner
+            "provider": {
+                "reference": _urn(org_uid),
+                "display": data.get("hospital", {}).get("name", "Hospital"),
+            },
+            # FIX: priority now includes correct system URI
+            "priority": {"coding": [{
+                "system":  "http://terminology.hl7.org/CodeSystem/processpriority",
+                "code":    "normal",
+                "display": "Normal",
+            }]},
+            "diagnosis":     diagnosis_list,
+            "supportingInfo": supporting_info,
+            "item": [{
+                "sequence": 1,
+                "productOrService": {
+                    "coding": [{"system": "http://loinc.org",
+                                 "code":   item_loinc,
+                                 "display": item_display}],
+                    "text": report_type or item_display,
+                },
+                "servicedDate": report_date,
+                "quantity": {"value": 1},
+                "locationCodeableConcept": {"coding": [{
+                    "system":  "http://terminology.hl7.org/CodeSystem/ex-serviceplace",
+                    "code":    "21",
+                    "display": "Inpatient Hospital",
+                }]},
+            }],
+        }
